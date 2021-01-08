@@ -38,9 +38,10 @@
 #define NO_FADE (FRAMES_PER_FADE + 2)
 
 #define BRIGHTNESS_HIGH  128      // preset overall brightness (aka max. brightness)
-#define BRIGHTNESS_LOW  12      // preset overall brightness (aka max. brightness)
-#define BRIGHTNESS_COLD 128  // relative brightness to global brightness value (128 = half as bright)
-#define COOL_DOWN_TIME 30    // seconds after change "cold" brightness is reached
+#define BRIGHTNESS_LOW  12        // preset overall brightness (aka max. brightness)
+#define BRIGHTNESS_COLD 128       // relative brightness to global brightness value (128 = half as bright)
+#define COOL_DOWN_TIME 30         // seconds after change "cold" brightness is reached
+#define SENSOR_CURVE 0.35         // exponent for relative (0..1) light sensor readings 
 
 const String POSSIBLE_STATES = "0123456789abcdefghijklmnopqrstuvwxyz-_:.?!$%/<>ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
@@ -53,6 +54,7 @@ uint8_t brightness_low  = BRIGHTNESS_LOW;    // this should be customizable late
 uint8_t brightness_high = BRIGHTNESS_HIGH;    // this should be customizable later
 uint8_t brightness_cold = BRIGHTNESS_COLD;  // this should be customizable later
 uint8_t cool_down_time = COOL_DOWN_TIME;    // this should be customizable later
+float sensor_curve_calibration = 0.45;
 CHSV stateColor[256];             // stores the color to each state - we are not using all the states, I know...
 
 uint8_t mapping[NUM_LEDS_MAX]; // this way we can map all inputs at different places later
@@ -231,7 +233,7 @@ void setup() {
     mapping[i] = i;
   }
   mapping[NUM_LEDS_MAX] = NUM_LEDS_MAX;
-  FastLED.setDither( 1 );
+  FastLED.setDither( 1 );     // activate temporal dithering
   Serial.println(F("done."));
 
   delay(100);
@@ -246,15 +248,13 @@ void setup() {
   avg.addValue(1);
 }
 
+// reads the light sensor and calculates the new brightness
 void getLightSensor() {
-  CHSV c = rgb2hsv_approximate(CRGB::Yellow);
-  float reading = analogRead(LIGHT_SENSOR); //Read light level
-  float square_ratio = reading / 1023.0;      //Get percent of maximum value (1023)
-  square_ratio = pow(square_ratio, 0.45);      //Square to make response more obvious
-  avg.addValue(square_ratio);
+  float reading = analogRead(LIGHT_SENSOR);                   // get light level
+  float square_ratio = reading / 1023.0;                      // normalize sensor value
+  square_ratio = pow(square_ratio, sensor_curve_calibration); // exponential function to correct light detecting curve
+  avg.addValue(square_ratio);                                 // insert into running average
   FastLED.setBrightness(map(avg.getAverage()*255,0,255,brightness_low,brightness_high));
-    //Adjust LED brightness relatively
-//  leds[NUM_LEDS_MAX] = c;
 }
 
 // let the show begin
@@ -268,6 +268,6 @@ void loop() {
   }
   EVERY_N_MILLIS(1000 / FRAMES_PER_SECOND) {
     doFading();
-    FastLED.show();
   }
+  FastLED.show(); // put this outside the per frame function to make temporal dithering smooth
 }

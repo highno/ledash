@@ -12,6 +12,7 @@
  * Use "n=M" text format to set state number n to state M (alphanumerical).
  * The associated LED smoothly changes its color to the one of the new state. Done!
  * 
+ * Build instructions: connect data pin of WS2812 to LED_PIN and TEMT6000 (3.3v) to pin LIGHT_SENSOR
  * Configure the predefined states colors in setup()
  * Set overall brightness and heat/cool-down values so newly set values are brighter.
  * Map states to LEDs (code only so far)
@@ -20,22 +21,24 @@
  *  - change brightness/cool-down/cool-down-time via MQTT
  *  - change mapping of LEDs to states via MQTT
  *  - store configuration in filesystem
- *  - measurement of ambient light to automatically set brightness
  */
 
 #include <Arduino.h>
 #include "Homie.h"
 #include "FastLED.h"
+#include "RunningAverage.h"
 
+#define LIGHT_SENSOR A0
 #define LED_PIN     D2
 #define COLOR_ORDER GRB
 #define CHIPSET     WS2812B
-#define NUM_LEDS_MAX      60   // this needs to be lower than 254 because of byte values used... 
+#define NUM_LEDS_MAX      50   // this needs to be lower than 254 because of byte values used... 
 #define FRAMES_PER_SECOND 50
 #define FRAMES_PER_FADE ((FRAMES_PER_SECOND * 1.4) / 2)
 #define NO_FADE (FRAMES_PER_FADE + 2)
 
-#define BRIGHTNESS  128      // preset overall brightness (aka max. brightness)
+#define BRIGHTNESS_HIGH  128      // preset overall brightness (aka max. brightness)
+#define BRIGHTNESS_LOW  12      // preset overall brightness (aka max. brightness)
 #define BRIGHTNESS_COLD 128  // relative brightness to global brightness value (128 = half as bright)
 #define COOL_DOWN_TIME 30    // seconds after change "cold" brightness is reached
 
@@ -46,7 +49,8 @@ uint8_t stateNext[NUM_LEDS_MAX];  // stores the next state after fading out
 int8_t stateFader[NUM_LEDS_MAX];  // stores the value, how far fading has progressed
 CRGB leds[NUM_LEDS_MAX+1];        // stores the led's colors
 uint16_t led_count = NUM_LEDS_MAX;  // this should be customizable later
-uint8_t brightness = BRIGHTNESS;    // this should be customizable later
+uint8_t brightness_low  = BRIGHTNESS_LOW;    // this should be customizable later
+uint8_t brightness_high = BRIGHTNESS_HIGH;    // this should be customizable later
 uint8_t brightness_cold = BRIGHTNESS_COLD;  // this should be customizable later
 uint8_t cool_down_time = COOL_DOWN_TIME;    // this should be customizable later
 CHSV stateColor[256];             // stores the color to each state - we are not using all the states, I know...
@@ -56,6 +60,8 @@ uint8_t heat[NUM_LEDS_MAX];    // fresh changes should be brighter
 
 HomieNode controlNode("control","Control LEDs","controller");  // this is to control the dashboard
 HomieNode configNode("config","Configuration","config");
+
+RunningAverage avg(50);
 
 // sends the active status via MQTT
 void sendStatus() {
@@ -205,8 +211,8 @@ void setup() {
 
   delay(500);
   Serial.print(F("...initializing FastLed ..."));
-  FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS_MAX).setCorrection( UncorrectedColor );
-  FastLED.setBrightness(brightness);
+  FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS_MAX+1).setCorrection( UncorrectedColor );
+  FastLED.setBrightness(brightness_high);
   for (int i=-1; i<=NUM_LEDS_MAX; i++) {
     for (int j=0; j<NUM_LEDS_MAX; j++) {
       if (i==j) {
@@ -235,6 +241,20 @@ void setup() {
   Homie.setup();
   Serial.println(F("done."));
 
+  pinMode(LIGHT_SENSOR,  INPUT); 
+  avg.clear();
+  avg.addValue(1);
+}
+
+void getLightSensor() {
+  CHSV c = rgb2hsv_approximate(CRGB::Yellow);
+  float reading = analogRead(LIGHT_SENSOR); //Read light level
+  float square_ratio = reading / 1023.0;      //Get percent of maximum value (1023)
+  square_ratio = pow(square_ratio, 0.45);      //Square to make response more obvious
+  avg.addValue(square_ratio);
+  FastLED.setBrightness(map(avg.getAverage()*255,0,255,brightness_low,brightness_high));
+    //Adjust LED brightness relatively
+//  leds[NUM_LEDS_MAX] = c;
 }
 
 // let the show begin
@@ -242,6 +262,9 @@ void loop() {
   Homie.loop();  // do the "Homie" thing
   EVERY_N_MILLIS((cool_down_time * 1000) / (255 - brightness_cold)) { 
     doCooling();
+  }
+  EVERY_N_MILLIS(100) {
+    getLightSensor();
   }
   EVERY_N_MILLIS(1000 / FRAMES_PER_SECOND) {
     doFading();

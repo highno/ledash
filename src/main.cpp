@@ -57,7 +57,7 @@ uint8_t cool_down_time = COOL_DOWN_TIME;    // this should be customizable later
 float sensor_curve_calibration = 0.45;
 CHSV stateColor[256];             // stores the color to each state - we are not using all the states, I know...
 
-uint8_t mapping[NUM_LEDS_MAX]; // this way we can map all inputs at different places later
+uint8_t mapping[NUM_LEDS_MAX+1]; // this way we can map all inputs at different places later
 uint8_t heat[NUM_LEDS_MAX];    // fresh changes should be brighter
 
 HomieNode controlNode("control","Control LEDs","controller");  // this is to control the dashboard
@@ -152,7 +152,7 @@ bool statusHandler(const HomieRange& range, const String& value) {
 // it respects and calculates the fading from one to the next state
 // full heat is applied after zero is crossed
 void doFading() {
-  for (int j=0; j<NUM_LEDS_MAX-40; j++) {
+  for (int j=0; j<NUM_LEDS_MAX; j++) {
     if (stateFader[j]!= NO_FADE) {
       // ok, we are fading
       if (stateFader[j]>0) {

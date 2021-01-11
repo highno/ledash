@@ -32,33 +32,33 @@
 #define LED_PIN     D2
 #define COLOR_ORDER GRB
 #define CHIPSET     WS2812B
-#define NUM_LEDS_MAX      50   // this needs to be lower than 254 because of byte values used... 
+#define NUM_LEDS_MAX      20   // this needs to be lower than 254 because of byte values used... 
 #define FRAMES_PER_SECOND 50
 #define FRAMES_PER_FADE ((FRAMES_PER_SECOND * 1.4) / 2)
 #define NO_FADE (FRAMES_PER_FADE + 2)
 
-#define BRIGHTNESS_HIGH  128      // preset overall brightness (aka max. brightness)
-#define BRIGHTNESS_LOW  12        // preset overall brightness (aka max. brightness)
+#define BRIGHTNESS_HIGH  255      // preset overall brightness (aka max. brightness)
+#define BRIGHTNESS_LOW  12        // preset overall brightness for lowest brightness (aka max. brightness)
 #define BRIGHTNESS_COLD 128       // relative brightness to global brightness value (128 = half as bright)
 #define COOL_DOWN_TIME 30         // seconds after change "cold" brightness is reached
 #define SENSOR_CURVE 0.35         // exponent for relative (0..1) light sensor readings 
 
 const String POSSIBLE_STATES = "0123456789abcdefghijklmnopqrstuvwxyz-_:.?!$%/<>ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
-uint8_t state[NUM_LEDS_MAX];      // stores the actual state
-uint8_t stateNext[NUM_LEDS_MAX];  // stores the next state after fading out
-int8_t stateFader[NUM_LEDS_MAX];  // stores the value, how far fading has progressed
-CRGB leds[NUM_LEDS_MAX+1];        // stores the led's colors
-uint16_t led_count = NUM_LEDS_MAX;  // this should be customizable later
-uint8_t brightness_low  = BRIGHTNESS_LOW;    // this should be customizable later
-uint8_t brightness_high = BRIGHTNESS_HIGH;    // this should be customizable later
-uint8_t brightness_cold = BRIGHTNESS_COLD;  // this should be customizable later
-uint8_t cool_down_time = COOL_DOWN_TIME;    // this should be customizable later
-float sensor_curve_calibration = 0.45;
-CHSV stateColor[256];             // stores the color to each state - we are not using all the states, I know...
+uint8_t state[NUM_LEDS_MAX];                    // stores the actual state
+uint8_t stateNext[NUM_LEDS_MAX];                // stores the next state after fading out
+int8_t stateFader[NUM_LEDS_MAX];                // stores the value, how far fading has progressed
+CRGB leds[NUM_LEDS_MAX+1];                      // stores the led's colors
+uint16_t led_count = NUM_LEDS_MAX;              // this should be customizable later
+uint8_t brightness_low  = BRIGHTNESS_LOW;       // this should be customizable later
+uint8_t brightness_high = BRIGHTNESS_HIGH;      // this should be customizable later
+uint8_t brightness_cold = BRIGHTNESS_COLD;      // this should be customizable later
+uint8_t cool_down_time = COOL_DOWN_TIME;        // this should be customizable later
+float sensor_curve_calibration = SENSOR_CURVE;  // this should be customizable later
+CHSV stateColor[256];                           // stores the color to each state - we are not using all the states, I know...
 
-uint8_t mapping[NUM_LEDS_MAX+1]; // this way we can map all inputs at different places later
-uint8_t heat[NUM_LEDS_MAX];    // fresh changes should be brighter
+uint8_t mapping[NUM_LEDS_MAX+1];  // this way we can map all inputs at different places later
+uint8_t heat[NUM_LEDS_MAX];       // fresh changes should be brighter
 
 HomieNode controlNode("control","Control LEDs","controller");  // this is to control the dashboard
 HomieNode configNode("config","Configuration","config");

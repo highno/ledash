@@ -40,16 +40,17 @@
 #define BRIGHTNESS_HIGH  255      // preset overall brightness (aka max. brightness)
 #define BRIGHTNESS_LOW  12        // preset overall brightness for lowest brightness (aka max. brightness)
 #define BRIGHTNESS_COLD 128       // relative brightness to global brightness value (128 = half as bright)
-#define COOL_DOWN_TIME 30         // seconds after change "cold" brightness is reached
-#define SENSOR_CURVE 0.35         // exponent for relative (0..1) light sensor readings 
+#define COOL_DOWN_TIME 40         // seconds after change "cold" brightness is reached
+#define SENSOR_CURVE 0.20         // exponent for relative (0..1) light sensor readings 
 
 const String POSSIBLE_STATES = "0123456789abcdefghijklmnopqrstuvwxyz-_:.?!$%/<>ABCDEFGHIJKLMNOPQRSTUVWXYZ ";
 
 uint8_t state[NUM_LEDS_MAX];                    // stores the actual state
 uint8_t stateNext[NUM_LEDS_MAX];                // stores the next state after fading out
 int8_t stateFader[NUM_LEDS_MAX];                // stores the value, how far fading has progressed
+CRGB ledsUnmapped[NUM_LEDS_MAX+1];                      // stores the led's colors
 CRGB leds[NUM_LEDS_MAX+1];                      // stores the led's colors
-uint16_t led_count = NUM_LEDS_MAX;              // this should be customizable later
+uint16_t led_count = 20;              // this should be customizable later
 uint8_t brightness_low  = BRIGHTNESS_LOW;       // this should be customizable later
 uint8_t brightness_high = BRIGHTNESS_HIGH;      // this should be customizable later
 uint8_t brightness_cold = BRIGHTNESS_COLD;      // this should be customizable later
@@ -148,6 +149,56 @@ bool statusHandler(const HomieRange& range, const String& value) {
   return true;
 }
 
+// this handler takes a new mapping set from MQTT and adjusts led mapping to event slots
+// sending n1;n2;n3;...(nx = numeric, no spaces, just semicolon as seperator
+// will map led1 to slot n1, led2 to n2, ... 
+// If less then led_count values are sent, rest will be black, if more are send, rest is ignored, 
+// any nonnumeric fields will be black
+bool mappingHandler(const HomieRange& range, const String& value) {
+//  Serial.println("  controlNode mappingHandler called with value:" + value);
+
+  int n = 0;
+  int pos_start = 0;
+  int pos_end = 0;
+  while ((n<led_count) && (pos_start <= value.length())) {
+    int p = value.indexOf(";",pos_start);
+
+    // did we find a semicolon?
+    if (p<1) {
+      // no, so take all the rest of the string
+      pos_end = value.length();
+    } else {
+      // ok, there is a semicolon, let's end the substring there
+      pos_end = p;
+    };
+
+    const String v1 = value.substring(pos_start, pos_end);
+  //  Serial.printf("  we are at led #%d which starts at %d and ends at %d, value is %s\n",n,pos_start,pos_end,v1.c_str());
+    if (!isNumeric(v1)) {
+      // ohoh, no number here, so led will be black
+      mapping[n] = NUM_LEDS_MAX;
+    } else {
+      int v = v1.toInt();
+      if ((v < NUM_LEDS_MAX) && (v >= 0)) {
+        // great, mathing number here, so led will be set to it
+        mapping[n] = v;
+      } else {
+        // ohoh, number is out of scale, so led will be black
+        mapping[n] = NUM_LEDS_MAX;
+      }
+    }
+    n++;
+    pos_start = pos_end + 1;
+  }
+  if (n < led_count) {
+    // we left to early, so let's black out the rest of the leds
+    for (int i = n; i< led_count; i++) {
+      mapping[i] = NUM_LEDS_MAX;
+    }
+  }
+  return true;
+}
+
 // calculate the colors and especially their values (in HSV mode)
 // it respects and calculates the fading from one to the next state
 // full heat is applied after zero is crossed
@@ -160,7 +211,7 @@ void doFading() {
         CHSV c = stateColor[state[j]];
         c.val = map(stateFader[j],0,FRAMES_PER_FADE,0,c.val);
         c.val = map(heat[j],0,255,0,c.val);
-        leds[mapping[j]] = c;
+        ledsUnmapped[j] = c;
         stateFader[j]--;
       } else {
         // we have crossed zero and are fading in, so heat to the max
@@ -168,7 +219,7 @@ void doFading() {
         CHSV c = stateColor[stateNext[j]];
         c.val = map(stateFader[j],0,-FRAMES_PER_FADE,0,c.val);
         c.val = map(heat[j],0,255,0,c.val);
-        leds[mapping[j]] = c;
+        ledsUnmapped[j] = c;
         stateFader[j]--;
       }
       if (stateFader[j]< -FRAMES_PER_FADE) {
@@ -176,7 +227,7 @@ void doFading() {
         state[j] = stateNext[j];
         CHSV c = stateColor[state[j]];
         c.val = map(heat[j],0,255,0,c.val);
-        leds[mapping[j]] = c;
+        ledsUnmapped[j] = c;
         stateFader[j] = NO_FADE;
         sendStatus(); // send status because we changed state[]
       }
@@ -184,8 +235,12 @@ void doFading() {
       // no fading, so take state's color and cool applied to active heat
       CHSV c = stateColor[state[j]];
       c.val = map(heat[j],0,255,0,c.val);
-      leds[mapping[j]] = c;
+      ledsUnmapped[j] = c;
     }
+  }
+  for (int j=0; j<led_count; j++) {
+    leds[j] = rgb2hsv_approximate(CRGB::Black);
+    leds[j] = ledsUnmapped[mapping[j]];
   }
 }
 
@@ -226,8 +281,10 @@ void setup() {
       stateNext[j] = 0;
       stateFader[j] = NO_FADE;
     }
-    FastLED.show();
-    delay(50);
+    if (i <= led_count) {
+      FastLED.show();
+      delay(50);
+    }
   }
   for (int i = 0; i<=NUM_LEDS_MAX; i++) {
     mapping[i] = i;
@@ -239,7 +296,8 @@ void setup() {
   delay(100);
   Serial.print(F("...initializing Homie ..."));
   Homie_setFirmware("IoT-Dashboard", "0.1"); // The underscore is not a typo! See Magic bytes
-  controlNode.advertise("status").settable(statusHandler); // save the configuration 
+  controlNode.advertise("status").settable(statusHandler); // set a new status 
+  controlNode.advertise("mapping").settable(mappingHandler); // set a new led mapping 
   Homie.setup();
   Serial.println(F("done."));
 
